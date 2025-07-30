@@ -35,8 +35,8 @@ def get_current_user(
         # Decode JWT token
         payload = jwt.decode(
             credentials.credentials,
-            settings.SECRET_KEY,
-            algorithms=[settings.ALGORITHM]
+            settings.secret_key,
+            algorithms=[settings.algorithm]
         )
         
         user_id: int = payload.get("sub")
@@ -64,7 +64,7 @@ def get_current_user(
             detail="Token has expired",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    except jwt.JWTError:
+    except jwt.InvalidTokenError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",

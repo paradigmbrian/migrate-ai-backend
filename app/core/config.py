@@ -38,11 +38,11 @@ class Settings(BaseSettings):
     # External APIs
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY", description="OpenAI API key")
     
-    # MCP Server
-    mcp_server_url: str = Field(
-        default="http://localhost:8001", 
-        alias="MCP_SERVER_URL",
-        description="MCP server URL for data collection"
+    # Data Collection
+    data_collection_timeout: int = Field(
+        default=30,
+        alias="DATA_COLLECTION_TIMEOUT",
+        description="Timeout for data collection requests in seconds"
     )
     
     # Logging
