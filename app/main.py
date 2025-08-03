@@ -1,11 +1,11 @@
 """
-Main FastAPI application for MigrateAI backend.
+Main FastAPI application entry point.
 """
 
+import os
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from contextlib import asynccontextmanager
 from app.core.config import settings
 from app.db.database import init_db
 from app.api.v1.api import api_router
@@ -13,26 +13,23 @@ from app.api.v1.api import api_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan events."""
-    # Startup
+    """Application lifespan manager."""
     print("Starting MigrateAI Backend...")
+    
+    # Initialize database connection
     await init_db()
     print("Database initialized successfully")
     
     yield
     
-    # Shutdown
     print("Shutting down MigrateAI Backend...")
 
 
-# Create FastAPI application
+# Create FastAPI app
 app = FastAPI(
-    title=settings.app_name,
-    version=settings.app_version,
+    title="MigrateAI Backend",
     description="Backend API for MigrateAI - Immigration checklist and guidance platform",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    version="0.1.0",
     lifespan=lifespan,
 )
 
@@ -45,40 +42,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add trusted host middleware for security
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=["*"]  # Configure appropriately for production
-)
-
-# Include API routes
-app.include_router(api_router, prefix=settings.api_v1_prefix)
+# Include API router
+app.include_router(api_router, prefix="/api/v1")
 
 
 @app.get("/")
 async def root():
     """Root endpoint."""
     return {
-        "message": "Welcome to MigrateAI Backend API",
-        "version": settings.app_version,
-        "docs": "/docs",
-        "redoc": "/redoc",
+        "message": "MigrateAI Backend API",
+        "version": "0.1.0",
+        "status": "running"
     }
 
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "service": "migrate-backend"}
+    return {"status": "healthy"}
 
 
 if __name__ == "__main__":
     import uvicorn
     
+    # Load local environment if available
+    if os.path.exists(".env.local"):
+        from dotenv import load_dotenv
+        load_dotenv(".env.local")
+    
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=settings.debug,
-        log_level=settings.log_level.lower(),
+        reload=True,
+        log_level="info"
     ) 

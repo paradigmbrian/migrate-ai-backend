@@ -17,9 +17,7 @@ class Settings(BaseSettings):
     
     # API
     api_v1_prefix: str = "/api/v1"
-    secret_key: str = Field(..., alias="SECRET_KEY", description="Secret key for JWT tokens")
-    algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    secret_key: str = Field(..., alias="SECRET_KEY", description="Secret key for application")
     
     # Database
     database_url: str = Field(..., alias="DATABASE_URL", description="PostgreSQL database URL")
@@ -37,6 +35,16 @@ class Settings(BaseSettings):
     
     # External APIs
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY", description="OpenAI API key")
+    
+    # AWS Configuration
+    aws_region: str = Field(default="us-east-1", alias="AWS_REGION", description="AWS region")
+    aws_access_key_id: Optional[str] = Field(default=None, alias="AWS_ACCESS_KEY_ID", description="AWS access key ID")
+    aws_secret_access_key: Optional[str] = Field(default=None, alias="AWS_SECRET_ACCESS_KEY", description="AWS secret access key")
+    
+    # AWS Cognito Configuration
+    cognito_user_pool_id: Optional[str] = Field(default=None, alias="COGNITO_USER_POOL_ID", description="Cognito User Pool ID")
+    cognito_client_id: Optional[str] = Field(default=None, alias="COGNITO_CLIENT_ID", description="Cognito App Client ID")
+    cognito_client_secret: Optional[str] = Field(default=None, alias="COGNITO_CLIENT_SECRET", description="Cognito App Client Secret")
     
     # Data Collection
     data_collection_timeout: int = Field(

@@ -2,8 +2,9 @@
 User model for authentication and user management.
 """
 
+import uuid
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text
+from sqlalchemy import Column, String, DateTime, Boolean, Text, Integer
 from sqlalchemy.orm import relationship
 from app.db.database import Base
 
@@ -13,9 +14,9 @@ class User(Base):
     
     __tablename__ = "users"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     email = Column(String(255), unique=True, index=True, nullable=False)
-    hashed_password = Column(String(255), nullable=False)
+    hashed_password = Column(String(255), nullable=False)  # Required for JWT auth
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     age = Column(Integer, nullable=True)

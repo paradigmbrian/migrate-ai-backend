@@ -6,49 +6,44 @@ from typing import AsyncGenerator, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
-import jwt
-from datetime import datetime
-
-from app.db.database import AsyncSessionLocal
+from app.db.database import get_db
 from app.models.user import User
-from app.core.config import settings
+from app.services.cognito_service import cognito_service
 
 # Security scheme
 security = HTTPBearer()
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Get database session."""
-    async with AsyncSessionLocal() as session:
-        try:
-            yield session
-        finally:
-            await session.close()
-
-
-def get_current_user(
+async def get_current_user(
     db: AsyncSession = Depends(get_db),
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> User:
-    """Get current authenticated user."""
+    """Get current authenticated user using Cognito JWT validation."""
     try:
-        # Decode JWT token
-        payload = jwt.decode(
-            credentials.credentials,
-            settings.secret_key,
-            algorithms=[settings.algorithm]
-        )
+        # Verify JWT token with Cognito
+        token_response = await cognito_service.verify_token(credentials.credentials)
         
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        if not token_response.get('success'):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not validate credentials",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Get user from database
-        user = db.query(User).filter(User.id == user_id).first()
+        # Get user sub from token payload
+        user_sub = token_response.get('user_sub')
+        if not user_sub:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Get user from database using Cognito user sub
+        from sqlalchemy import select
+        result = await db.execute(select(User).where(User.id == user_sub))
+        user = result.scalar_one_or_none()
+        
         if user is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -58,13 +53,9 @@ def get_current_user(
         
         return user
         
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has expired",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    except jwt.InvalidTokenError:
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
@@ -72,7 +63,7 @@ def get_current_user(
         )
 
 
-def get_optional_current_user(
+async def get_optional_current_user(
     db: AsyncSession = Depends(get_db),
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> Optional[User]:
@@ -81,6 +72,43 @@ def get_optional_current_user(
         return None
     
     try:
-        return get_current_user(db, credentials)
+        return await get_current_user(db, credentials)
     except HTTPException:
-        return None 
+        return None
+
+
+async def get_cognito_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> dict:
+    """Get current Cognito user data."""
+    try:
+        # Verify token and get user data
+        token_response = await cognito_service.verify_token(credentials.credentials)
+        
+        if not token_response.get('success'):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Get detailed user information from Cognito
+        user_response = await cognito_service.get_user(credentials.credentials)
+        
+        if not user_response.get('success'):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not get user information",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        return user_response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) 

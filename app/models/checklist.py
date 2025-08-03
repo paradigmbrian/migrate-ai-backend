@@ -37,7 +37,7 @@ class Checklist(Base):
     __tablename__ = "checklists"
     
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     

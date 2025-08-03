@@ -43,7 +43,7 @@ class UserResponse(UserBase):
     """User response model."""
     model_config = ConfigDict(from_attributes=True)
     
-    id: int
+    id: str  # Changed from int to str for UUID support
     is_active: bool
     is_verified: bool
     created_at: datetime
