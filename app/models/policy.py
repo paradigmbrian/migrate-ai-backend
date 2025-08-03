@@ -2,6 +2,7 @@
 Policy model for storing immigration policies and requirements.
 """
 
+import uuid
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Enum
 from sqlalchemy.orm import relationship
@@ -37,7 +38,7 @@ class Policy(Base):
     
     __tablename__ = "policies"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     country_code = Column(String(3), ForeignKey("countries.code"), nullable=False)
     
     # Policy details

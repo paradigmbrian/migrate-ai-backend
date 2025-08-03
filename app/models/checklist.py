@@ -2,6 +2,7 @@
 Checklist models for migration planning.
 """
 
+import uuid
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Enum
 from sqlalchemy.orm import relationship
@@ -36,14 +37,14 @@ class Checklist(Base):
     
     __tablename__ = "checklists"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     
-    # Migration details
-    origin_country_code = Column(String(3), nullable=False)
-    destination_country_code = Column(String(3), nullable=False)
+    # Migration details (moved from User model)
+    origin_country = Column(String(3), nullable=False)
+    destination_country = Column(String(3), nullable=False)
     reason_for_moving = Column(String(200), nullable=True)
     
     # Status and progress
@@ -68,8 +69,8 @@ class ChecklistItem(Base):
     
     __tablename__ = "checklist_items"
     
-    id = Column(Integer, primary_key=True, index=True)
-    checklist_id = Column(Integer, ForeignKey("checklists.id"), nullable=False)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
+    checklist_id = Column(String, ForeignKey("checklists.id"), nullable=False)
     
     # Item details
     title = Column(String(200), nullable=False)

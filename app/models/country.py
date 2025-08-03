@@ -2,6 +2,7 @@
 Country model for storing country information and data.
 """
 
+import uuid
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Float
 from app.db.database import Base
@@ -12,7 +13,7 @@ class Country(Base):
     
     __tablename__ = "countries"
     
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=lambda: str(uuid.uuid4()))
     code = Column(String(3), unique=True, index=True, nullable=False)  # ISO 3166-1 alpha-3
     name = Column(String(100), nullable=False)
     flag_emoji = Column(String(10), nullable=True)
