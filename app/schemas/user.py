@@ -12,13 +12,7 @@ class UserBase(BaseModel):
     email: str
     first_name: str
     last_name: str
-    age: Optional[int] = None
-    marital_status: Optional[str] = None
-    profession: Optional[str] = None
-    dependents: int = 0
-    origin_country_code: Optional[str] = None
-    destination_country_code: Optional[str] = None
-    reason_for_moving: Optional[str] = None
+    birthdate: Optional[str] = None  # YYYY-MM-DD format
 
 
 class UserCreate(UserBase):
@@ -30,20 +24,18 @@ class UserUpdate(BaseModel):
     """User update model."""
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    age: Optional[int] = None
-    marital_status: Optional[str] = None
-    profession: Optional[str] = None
-    dependents: Optional[int] = None
-    origin_country_code: Optional[str] = None
-    destination_country_code: Optional[str] = None
-    reason_for_moving: Optional[str] = None
+    birthdate: Optional[str] = None
+    onboarding_complete: Optional[bool] = None
 
 
 class UserResponse(UserBase):
     """User response model."""
     model_config = ConfigDict(from_attributes=True)
     
-    id: str  # Changed from int to str for UUID support
+    id: str  # UUID
+    cognito_sub: str
+    onboarding_complete: bool
+    last_login: Optional[datetime] = None
     is_active: bool
     is_verified: bool
     created_at: datetime
@@ -51,5 +43,5 @@ class UserResponse(UserBase):
 
 
 class UserInDB(UserResponse):
-    """User in database model (includes hashed password)."""
-    hashed_password: str 
+    """User in database model."""
+    pass 

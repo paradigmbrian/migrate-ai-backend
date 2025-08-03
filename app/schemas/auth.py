@@ -25,13 +25,7 @@ class UserCreate(BaseModel):
     password: str
     first_name: str
     last_name: str
-    age: Optional[int] = None
-    marital_status: Optional[str] = None
-    profession: Optional[str] = None
-    dependents: int = 0
-    origin_country_code: Optional[str] = None
-    destination_country_code: Optional[str] = None
-    reason_for_moving: Optional[str] = None
+    birthdate: Optional[str] = None  # YYYY-MM-DD format
 
 
 class UserLogin(BaseModel):

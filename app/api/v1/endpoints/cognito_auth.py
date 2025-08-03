@@ -12,6 +12,7 @@ from app.models.user import User
 from app.schemas.auth import Token, UserCreate, UserLogin
 from app.schemas.user import UserResponse
 from app.services.cognito_service import cognito_service
+from app.services.profile_sync_service import ProfileSyncService
 import uuid
 
 # Set up logging
@@ -29,35 +30,17 @@ async def register(
     Register a new user using AWS Cognito.
     """
     logger.info(f"Registration attempt for email: {user_data.email}")
-    logger.info(f"User data received: {user_data.dict()}")
     
     try:
-        # Check if user already exists in database
-        from sqlalchemy import select
-        result = await db.execute(select(User).where(User.email == user_data.email))
-        existing_user = result.scalar_one_or_none()
-        
-        if existing_user:
-            logger.warning(f"Email already registered: {user_data.email}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Email already registered"
-            )
-        
-        logger.info("No existing user found, proceeding with registration")
-        
         # Prepare user attributes for Cognito
         user_attributes = {
             'email': user_data.email,
             'given_name': user_data.first_name,
             'family_name': user_data.last_name,
-            'birthdate': '1990-01-01',  # Required by User Pool
+            'birthdate': user_data.birthdate or '1990-01-01',  # Required by User Pool
         }
         
         logger.info(f"Prepared Cognito attributes: {user_attributes}")
-        
-        # Note: Custom attributes are not included to avoid configuration issues
-        # User profile data will be stored in our database instead
         
         # Register user with Cognito
         logger.info("Attempting Cognito sign up...")
@@ -77,29 +60,29 @@ async def register(
                 detail=f"Registration failed: {error_msg}"
             )
         
-        logger.info("Cognito registration successful, creating user in database")
+        logger.info("Cognito registration successful, syncing user to database")
         
-        # Create user profile in our database
-        new_user = User(
-            id=cognito_response['user_sub'],  # Use Cognito user sub as ID
-            email=user_data.email,
-            hashed_password="",  # Password is managed by Cognito
-            first_name=user_data.first_name,
-            last_name=user_data.last_name,
-            age=user_data.age,
-            marital_status=user_data.marital_status,
-            profession=user_data.profession,
-            dependents=user_data.dependents,
-            origin_country_code=user_data.origin_country_code,
-            destination_country_code=user_data.destination_country_code,
-            reason_for_moving=user_data.reason_for_moving,
-        )
+        # Sync user to database using ProfileSyncService
+        sync_service = ProfileSyncService(db)
         
-        logger.info(f"Creating user in database with ID: {new_user.id}")
-        db.add(new_user)
-        await db.commit()
-        await db.refresh(new_user)
-        logger.info("User successfully created in database")
+        # Get user data from Cognito for sync
+        cognito_user_data = {
+            'sub': cognito_response['user_sub'],
+            'email': user_data.email,
+            'given_name': user_data.first_name,
+            'family_name': user_data.last_name,
+            'birthdate': user_data.birthdate or '1990-01-01',
+        }
+        
+        try:
+            user = await sync_service.sync_cognito_user_to_db(cognito_user_data)
+            logger.info(f"User synced to database: {user.id}")
+        except Exception as sync_error:
+            logger.error(f"Failed to sync user to database: {sync_error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not log user in. User out of sync"
+            )
         
         # Sign in the user immediately after registration
         logger.info("Attempting to sign in user after registration...")
@@ -113,7 +96,7 @@ async def register(
             return {
                 "access_token": "",
                 "token_type": "bearer",
-                "user": UserResponse.from_orm(new_user),
+                "user": UserResponse.from_orm(user),
                 "message": "User registered successfully. Please sign in."
             }
         
@@ -121,7 +104,7 @@ async def register(
         return {
             "access_token": sign_in_response['access_token'],
             "token_type": "bearer",
-            "user": UserResponse.from_orm(new_user)
+            "user": UserResponse.from_orm(user)
         }
         
     except HTTPException:
@@ -131,7 +114,7 @@ async def register(
         logger.error(f"Unexpected error during registration: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Registration failed: {str(e)}"
+            detail="Could not log user in. User out of sync"
         )
 
 
@@ -155,16 +138,27 @@ async def login(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Get user from database
-        from sqlalchemy import select
-        result = await db.execute(select(User).where(User.email == user_data.email))
-        user = result.scalar_one_or_none()
+        # Get user data from Cognito for sync
+        user_response = await cognito_service.get_user(sign_in_response['access_token'])
         
-        if not user:
+        if not user_response.get('success'):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found in database",
+                detail="Failed to get user information",
                 headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Sync user to database using ProfileSyncService
+        sync_service = ProfileSyncService(db)
+        
+        try:
+            user = await sync_service.sync_cognito_user_to_db(user_response['user_data'])
+            logger.info(f"User synced to database: {user.id}")
+        except Exception as sync_error:
+            logger.error(f"Failed to sync user to database: {sync_error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not log user in. User out of sync"
             )
         
         if not user.is_active:
@@ -184,7 +178,7 @@ async def login(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Login failed: {str(e)}"
+            detail="Could not log user in. User out of sync"
         )
 
 
@@ -218,16 +212,17 @@ async def refresh_token(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Get user from database
-        from sqlalchemy import select
-        result = await db.execute(select(User).where(User.id == user_response['user_sub']))
-        user = result.scalar_one_or_none()
+        # Sync user to database using ProfileSyncService
+        sync_service = ProfileSyncService(db)
         
-        if not user:
+        try:
+            user = await sync_service.sync_cognito_user_to_db(user_response['user_data'])
+            logger.info(f"User synced to database: {user.id}")
+        except Exception as sync_error:
+            logger.error(f"Failed to sync user to database: {sync_error}")
             raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User not found",
-                headers={"WWW-Authenticate": "Bearer"},
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not log user in. User out of sync"
             )
         
         return {
@@ -241,7 +236,7 @@ async def refresh_token(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Token refresh failed: {str(e)}"
+            detail="Could not log user in. User out of sync"
         )
 
 
@@ -319,58 +314,6 @@ async def demo_login(
         demo_email = "demo@migrateai.com"
         demo_password = "DemoPassword123!"
         
-        # Check if demo user exists in database
-        from sqlalchemy import select
-        result = await db.execute(select(User).where(User.email == demo_email))
-        user = result.scalar_one_or_none()
-        
-        if not user:
-            # Create demo user in Cognito and database
-            # Use only standard attributes for now
-            user_attributes = {
-                'email': demo_email,
-                'given_name': 'Demo',
-                'family_name': 'User',
-                'birthdate': '1990-01-01',  # Required by User Pool
-            }
-            
-            # Register with Cognito
-            cognito_response = await cognito_service.sign_up(
-                demo_email,
-                demo_password,
-                user_attributes
-            )
-            
-            if not cognito_response.get('success'):
-                # Try to sign in if user already exists
-                sign_in_response = await cognito_service.sign_in(demo_email, demo_password)
-                if not sign_in_response.get('success'):
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Failed to create or sign in demo user"
-                    )
-                # Get the user_sub from the sign-in response or from Cognito
-                # For now, we'll create a user with a generated UUID
-                user_sub = str(uuid.uuid4())
-            else:
-                user_sub = cognito_response['user_sub']
-            
-            # Create user in database
-            user = User(
-                id=user_sub,
-                email=demo_email,
-                hashed_password="",
-                first_name="Demo",
-                last_name="User",
-                age=30,
-                marital_status="single",
-                profession="Software Engineer",
-                dependents=0,
-            )
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
-        
         # Sign in the demo user
         sign_in_response = await cognito_service.sign_in(demo_email, demo_password)
         
@@ -397,16 +340,28 @@ async def demo_login(
                 detail="Demo login failed"
             )
         
-        # If user was not created in this request, fetch it from database
-        if not user:
-            result = await db.execute(select(User).where(User.email == demo_email))
-            user = result.scalar_one_or_none()
-            
-            if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="Demo user not found in database"
-                )
+        # Get user data from Cognito for sync
+        user_response = await cognito_service.get_user(sign_in_response['access_token'])
+        
+        if not user_response.get('success'):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Failed to get user information",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Sync user to database using ProfileSyncService
+        sync_service = ProfileSyncService(db)
+        
+        try:
+            user = await sync_service.sync_cognito_user_to_db(user_response['user_data'])
+            logger.info(f"Demo user synced to database: {user.id}")
+        except Exception as sync_error:
+            logger.error(f"Failed to sync demo user to database: {sync_error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not log user in. User out of sync"
+            )
         
         return {
             "access_token": sign_in_response['access_token'],
@@ -419,5 +374,5 @@ async def demo_login(
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Demo login failed: {str(e)}"
+            detail="Could not log user in. User out of sync"
         ) 
