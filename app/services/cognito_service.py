@@ -5,6 +5,7 @@ AWS Cognito service for authentication and user management.
 import boto3
 import jwt
 import os
+import logging
 from typing import Optional, Dict, Any, List
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
@@ -14,6 +15,8 @@ load_dotenv('.env.local')
 
 from app.core.config import settings
 
+# Set up logging
+logger = logging.getLogger(__name__)
 
 class CognitoService:
     """AWS Cognito service for user authentication and management."""
@@ -74,6 +77,9 @@ class CognitoService:
         Returns:
             Dictionary containing sign up response
         """
+        logger.info(f"Starting Cognito sign up for email: {email}")
+        logger.info(f"User attributes received: {user_attributes}")
+        
         try:
             # Convert user attributes to Cognito format
             cognito_attributes = []
@@ -95,6 +101,9 @@ class CognitoService:
                 elif key == 'custom:dependents':
                     cognito_attributes.append({'Name': 'custom:dependents', 'Value': str(value)})
             
+            logger.info(f"Converted Cognito attributes: {cognito_attributes}")
+            logger.info(f"Using Client ID: {self.client_id}")
+            
             # cognito_attributes ready for API call
             response = self.client.sign_up(
                 ClientId=self.client_id,
@@ -102,6 +111,8 @@ class CognitoService:
                 Password=password,
                 UserAttributes=cognito_attributes
             )
+            
+            logger.info(f"Cognito sign up successful, response: {response}")
             
             return {
                 'success': True,
@@ -112,10 +123,18 @@ class CognitoService:
         except ClientError as e:
             error_code = e.response['Error']['Code']
             error_message = e.response['Error']['Message']
+            logger.error(f"Cognito ClientError: {error_code} - {error_message}")
             return {
                 'success': False,
                 'error_code': error_code,
                 'error_message': error_message
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error in Cognito sign up: {str(e)}", exc_info=True)
+            return {
+                'success': False,
+                'error_code': 'UNKNOWN_ERROR',
+                'error_message': str(e)
             }
     
     async def sign_in(self, email: str, password: str) -> Dict[str, Any]:

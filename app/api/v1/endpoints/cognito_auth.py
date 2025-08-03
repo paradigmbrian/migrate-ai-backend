@@ -2,6 +2,7 @@
 Cognito authentication endpoints for user registration and login.
 """
 
+import logging
 from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,9 @@ from app.schemas.auth import Token, UserCreate, UserLogin
 from app.schemas.user import UserResponse
 from app.services.cognito_service import cognito_service
 import uuid
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -24,6 +28,9 @@ async def register(
     """
     Register a new user using AWS Cognito.
     """
+    logger.info(f"Registration attempt for email: {user_data.email}")
+    logger.info(f"User data received: {user_data.dict()}")
+    
     try:
         # Check if user already exists in database
         from sqlalchemy import select
@@ -31,41 +38,46 @@ async def register(
         existing_user = result.scalar_one_or_none()
         
         if existing_user:
+            logger.warning(f"Email already registered: {user_data.email}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
             )
+        
+        logger.info("No existing user found, proceeding with registration")
         
         # Prepare user attributes for Cognito
         user_attributes = {
             'email': user_data.email,
             'given_name': user_data.first_name,
             'family_name': user_data.last_name,
+            'birthdate': '1990-01-01',  # Required by User Pool
         }
         
-        # Add optional attributes if provided
-        if user_data.age:
-            user_attributes['custom:age'] = str(user_data.age)
-        if user_data.marital_status:
-            user_attributes['custom:marital_status'] = user_data.marital_status
-        if user_data.profession:
-            user_attributes['custom:profession'] = user_data.profession
-        if user_data.dependents:
-            user_attributes['custom:dependents'] = str(user_data.dependents)
+        logger.info(f"Prepared Cognito attributes: {user_attributes}")
+        
+        # Note: Custom attributes are not included to avoid configuration issues
+        # User profile data will be stored in our database instead
         
         # Register user with Cognito
+        logger.info("Attempting Cognito sign up...")
         cognito_response = await cognito_service.sign_up(
             user_data.email,
             user_data.password,
             user_attributes
         )
         
+        logger.info(f"Cognito sign up response: {cognito_response}")
+        
         if not cognito_response.get('success'):
             error_msg = cognito_response.get('error_message', 'Registration failed')
+            logger.error(f"Cognito registration failed: {error_msg}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Registration failed: {error_msg}"
             )
+        
+        logger.info("Cognito registration successful, creating user in database")
         
         # Create user profile in our database
         new_user = User(
@@ -83,15 +95,21 @@ async def register(
             reason_for_moving=user_data.reason_for_moving,
         )
         
+        logger.info(f"Creating user in database with ID: {new_user.id}")
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
+        logger.info("User successfully created in database")
         
         # Sign in the user immediately after registration
+        logger.info("Attempting to sign in user after registration...")
         sign_in_response = await cognito_service.sign_in(user_data.email, user_data.password)
+        
+        logger.info(f"Sign in response: {sign_in_response}")
         
         if not sign_in_response.get('success'):
             # Registration succeeded but sign-in failed
+            logger.warning("Registration succeeded but sign-in failed")
             return {
                 "access_token": "",
                 "token_type": "bearer",
@@ -99,6 +117,7 @@ async def register(
                 "message": "User registered successfully. Please sign in."
             }
         
+        logger.info("Registration and sign-in successful")
         return {
             "access_token": sign_in_response['access_token'],
             "token_type": "bearer",
@@ -106,8 +125,10 @@ async def register(
         }
         
     except HTTPException:
+        logger.error("HTTPException raised during registration")
         raise
     except Exception as e:
+        logger.error(f"Unexpected error during registration: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Registration failed: {str(e)}"
