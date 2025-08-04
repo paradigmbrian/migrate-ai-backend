@@ -86,19 +86,36 @@ async def register(
         
         # Sign in the user immediately after registration
         logger.info("Attempting to sign in user after registration...")
+        
+        # First, try to confirm the user if they're not confirmed
+        try:
+            confirm_response = await cognito_service.confirm_sign_up(user_data.email)
+            logger.info(f"User confirmation response: {confirm_response}")
+        except Exception as confirm_error:
+            logger.warning(f"User confirmation failed (user might already be confirmed): {confirm_error}")
+        
+        # Try regular sign-in first
         sign_in_response = await cognito_service.sign_in(user_data.email, user_data.password)
         
         logger.info(f"Sign in response: {sign_in_response}")
         
         if not sign_in_response.get('success'):
-            # Registration succeeded but sign-in failed
-            logger.warning("Registration succeeded but sign-in failed")
-            return {
-                "access_token": "",
-                "token_type": "bearer",
-                "user": UserResponse.from_orm(user),
-                "message": "User registered successfully. Please sign in."
-            }
+            # If regular sign-in fails, try admin sign-in (bypasses confirmation)
+            logger.info("Regular sign-in failed, trying admin sign-in...")
+            admin_sign_in_response = await cognito_service.admin_sign_in(user_data.email, user_data.password)
+            
+            if admin_sign_in_response.get('success'):
+                logger.info("Admin sign-in successful")
+                sign_in_response = admin_sign_in_response
+            else:
+                # Both sign-in methods failed
+                logger.warning("Both regular and admin sign-in failed")
+                return {
+                    "access_token": "",
+                    "token_type": "bearer",
+                    "user": UserResponse.from_orm(user),
+                    "message": "User registered successfully. Please sign in."
+                }
         
         logger.info("Registration and sign-in successful")
         return {
@@ -151,8 +168,17 @@ async def login(
         # Sync user to database using ProfileSyncService
         sync_service = ProfileSyncService(db)
         
+        # Prepare user data for sync
+        cognito_user_data = {
+            'sub': user_response['user_sub'],
+            'email': user_response['attributes'].get('email', ''),
+            'given_name': user_response['attributes'].get('given_name', ''),
+            'family_name': user_response['attributes'].get('family_name', ''),
+            'birthdate': user_response['attributes'].get('birthdate', '1990-01-01'),
+        }
+        
         try:
-            user = await sync_service.sync_cognito_user_to_db(user_response['user_data'])
+            user = await sync_service.sync_cognito_user_to_db(cognito_user_data)
             logger.info(f"User synced to database: {user.id}")
         except Exception as sync_error:
             logger.error(f"Failed to sync user to database: {sync_error}")
@@ -215,8 +241,17 @@ async def refresh_token(
         # Sync user to database using ProfileSyncService
         sync_service = ProfileSyncService(db)
         
+        # Prepare user data for sync
+        cognito_user_data = {
+            'sub': user_response['user_sub'],
+            'email': user_response['attributes'].get('email', ''),
+            'given_name': user_response['attributes'].get('given_name', ''),
+            'family_name': user_response['attributes'].get('family_name', ''),
+            'birthdate': user_response['attributes'].get('birthdate', '1990-01-01'),
+        }
+        
         try:
-            user = await sync_service.sync_cognito_user_to_db(user_response['user_data'])
+            user = await sync_service.sync_cognito_user_to_db(cognito_user_data)
             logger.info(f"User synced to database: {user.id}")
         except Exception as sync_error:
             logger.error(f"Failed to sync user to database: {sync_error}")
