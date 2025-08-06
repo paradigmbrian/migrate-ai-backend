@@ -6,6 +6,7 @@ import boto3
 import jwt
 import os
 import logging
+import requests
 from typing import Optional, Dict, Any, List
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
@@ -26,6 +27,8 @@ class CognitoService:
         self._client = None
         self._user_pool_id = None
         self._client_id = None
+        self._google_client_id = None
+        self._google_client_secret = None
     
     @property
     def client(self):
@@ -64,6 +67,24 @@ class CognitoService:
             if not self._client_id:
                 raise ValueError("COGNITO_CLIENT_ID not configured")
         return self._client_id
+    
+    @property
+    def google_client_id(self):
+        """Get Google Client ID from environment."""
+        if self._google_client_id is None:
+            self._google_client_id = os.getenv('GOOGLE_CLIENT_ID')
+            if not self._google_client_id:
+                raise ValueError("GOOGLE_CLIENT_ID not configured")
+        return self._google_client_id
+    
+    @property
+    def google_client_secret(self):
+        """Get Google Client Secret from environment."""
+        if self._google_client_secret is None:
+            self._google_client_secret = os.getenv('GOOGLE_CLIENT_SECRET')
+            if not self._google_client_secret:
+                raise ValueError("GOOGLE_CLIENT_SECRET not configured")
+        return self._google_client_secret
     
     async def sign_up(self, email: str, password: str, user_attributes: Dict[str, str]) -> Dict[str, Any]:
         """
@@ -372,12 +393,21 @@ class CognitoService:
             }
 
     async def admin_sign_in(self, username: str, password: str) -> Dict[str, Any]:
-        """Sign in user using admin_initiate_auth (bypasses user confirmation)."""
+        """
+        Admin sign in for demo purposes.
+        
+        Args:
+            username: User's email or username
+            password: User's password
+            
+        Returns:
+            Dictionary containing authentication response
+        """
         try:
             response = self.client.admin_initiate_auth(
                 UserPoolId=self.user_pool_id,
                 ClientId=self.client_id,
-                AuthFlow='ADMIN_USER_PASSWORD_AUTH',
+                AuthFlow='ADMIN_NO_SRP_AUTH',
                 AuthParameters={
                     'USERNAME': username,
                     'PASSWORD': password
@@ -391,10 +421,262 @@ class CognitoService:
                 'id_token': response['AuthenticationResult']['IdToken'],
                 'expires_in': response['AuthenticationResult']['ExpiresIn']
             }
+            
         except ClientError as e:
             error_code = e.response['Error']['Code']
             error_message = e.response['Error']['Message']
-                                    # Log error for debugging
+            logger.error(f"Admin sign in failed: {error_code} - {error_message}")
+            return {
+                'success': False,
+                'error_code': error_code,
+                'error_message': error_message
+            }
+        except Exception as e:
+            logger.error(f"Admin sign in error: {e}")
+            return {
+                'success': False,
+                'error_message': str(e)
+            }
+
+    async def sign_out(self, access_token: str) -> Dict[str, Any]:
+        """
+        Sign out user and revoke access token.
+        
+        Args:
+            access_token: User's access token to revoke
+            
+        Returns:
+            Dictionary containing sign out response
+        """
+        try:
+            # Revoke the access token
+            self.client.revoke_token(
+                Token=access_token,
+                ClientId=self.client_id
+            )
+            
+            logger.info("Access token successfully revoked")
+            
+            return {
+                'success': True,
+                'message': 'Successfully signed out'
+            }
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            error_message = e.response['Error']['Message']
+            logger.error(f"Sign out failed: {error_code} - {error_message}")
+            return {
+                'success': False,
+                'error_code': error_code,
+                'error_message': error_message
+            }
+        except Exception as e:
+            logger.error(f"Sign out error: {e}")
+            return {
+                'success': False,
+                'error_message': str(e)
+            }
+
+    async def validate_google_token(self, id_token: str) -> Dict[str, Any]:
+        """
+        Validate Google ID token.
+        
+        Args:
+            id_token: Google ID token
+            
+        Returns:
+            Dictionary containing validation result and user info
+        """
+        try:
+            # Verify the token with Google
+            response = requests.get(
+                'https://oauth2.googleapis.com/tokeninfo',
+                params={'id_token': id_token}
+            )
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error_code': 'INVALID_TOKEN',
+                    'error_message': 'Invalid Google ID token'
+                }
+            
+            token_info = response.json()
+            
+            # Verify the token is for our app
+            if token_info.get('aud') != self.google_client_id:
+                return {
+                    'success': False,
+                    'error_code': 'INVALID_AUDIENCE',
+                    'error_message': 'Token audience mismatch'
+                }
+            
+            return {
+                'success': True,
+                'user_info': {
+                    'sub': token_info.get('sub'),
+                    'email': token_info.get('email'),
+                    'email_verified': token_info.get('email_verified', False),
+                    'name': token_info.get('name'),
+                    'given_name': token_info.get('given_name'),
+                    'family_name': token_info.get('family_name'),
+                    'picture': token_info.get('picture')
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error validating Google token: {str(e)}")
+            return {
+                'success': False,
+                'error_code': 'VALIDATION_ERROR',
+                'error_message': str(e)
+            }
+    
+    async def initiate_google_oauth(self, authorization_code: str, redirect_uri: str) -> Dict[str, Any]:
+        """
+        Exchange authorization code for tokens using Google OAuth.
+        
+        Args:
+            authorization_code: Authorization code from Google
+            redirect_uri: Redirect URI used in OAuth flow
+            
+        Returns:
+            Dictionary containing tokens and user info
+        """
+        try:
+            # Exchange authorization code for tokens
+            token_response = requests.post(
+                'https://oauth2.googleapis.com/token',
+                data={
+                    'client_id': self.google_client_id,
+                    'client_secret': self.google_client_secret,
+                    'code': authorization_code,
+                    'grant_type': 'authorization_code',
+                    'redirect_uri': redirect_uri
+                }
+            )
+            
+            if token_response.status_code != 200:
+                return {
+                    'success': False,
+                    'error_code': 'TOKEN_EXCHANGE_FAILED',
+                    'error_message': 'Failed to exchange authorization code for tokens'
+                }
+            
+            token_data = token_response.json()
+            id_token = token_data.get('id_token')
+            
+            if not id_token:
+                return {
+                    'success': False,
+                    'error_code': 'NO_ID_TOKEN',
+                    'error_message': 'No ID token received from Google'
+                }
+            
+            # Validate the ID token
+            validation_result = await self.validate_google_token(id_token)
+            if not validation_result.get('success'):
+                return validation_result
+            
+            return {
+                'success': True,
+                'access_token': token_data.get('access_token'),
+                'id_token': id_token,
+                'refresh_token': token_data.get('refresh_token'),
+                'expires_in': token_data.get('expires_in'),
+                'user_info': validation_result['user_info']
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in Google OAuth flow: {str(e)}")
+            return {
+                'success': False,
+                'error_code': 'OAUTH_ERROR',
+                'error_message': str(e)
+            }
+    
+    async def get_google_user_info(self, access_token: str) -> Dict[str, Any]:
+        """
+        Get user information from Google API.
+        
+        Args:
+            access_token: Google access token
+            
+        Returns:
+            Dictionary containing user information
+        """
+        try:
+            response = requests.get(
+                'https://www.googleapis.com/oauth2/v2/userinfo',
+                headers={'Authorization': f'Bearer {access_token}'}
+            )
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error_code': 'API_ERROR',
+                    'error_message': 'Failed to get user info from Google'
+                }
+            
+            user_info = response.json()
+            
+            return {
+                'success': True,
+                'user_info': {
+                    'sub': user_info.get('id'),
+                    'email': user_info.get('email'),
+                    'email_verified': user_info.get('verified_email', False),
+                    'name': user_info.get('name'),
+                    'given_name': user_info.get('given_name'),
+                    'family_name': user_info.get('family_name'),
+                    'picture': user_info.get('picture')
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting Google user info: {str(e)}")
+            return {
+                'success': False,
+                'error_code': 'API_ERROR',
+                'error_message': str(e)
+            }
+    
+    async def federated_sign_in(self, provider: str, token: str) -> Dict[str, Any]:
+        """
+        Sign in using federated identity provider (Google).
+        
+        Args:
+            provider: Identity provider name ('Google')
+            token: ID token from the provider
+            
+        Returns:
+            Dictionary containing Cognito tokens
+        """
+        try:
+            # For Google, we need to use the ID token
+            response = self.client.initiate_auth(
+                ClientId=self.client_id,
+                AuthFlow='USER_PASSWORD_AUTH',
+                AuthParameters={
+                    'USERNAME': f'Google_{token}',  # This is a placeholder - actual implementation may vary
+                    'PASSWORD': token  # This is a placeholder - actual implementation may vary
+                }
+            )
+            
+            authentication_result = response.get('AuthenticationResult', {})
+            
+            return {
+                'success': True,
+                'access_token': authentication_result.get('AccessToken'),
+                'refresh_token': authentication_result.get('RefreshToken'),
+                'id_token': authentication_result.get('IdToken'),
+                'expires_in': authentication_result.get('ExpiresIn', 3600)
+            }
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            error_message = e.response['Error']['Message']
             return {
                 'success': False,
                 'error_code': error_code,

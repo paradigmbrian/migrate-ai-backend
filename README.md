@@ -190,11 +190,22 @@ uv run pytest --cov=app
 
 ## API Endpoints
 
-### Authentication
+### Authentication (AWS Cognito)
 
-- `POST /api/v1/auth/register` - User registration
-- `POST /api/v1/auth/login` - User login
-- `POST /api/v1/auth/demo-login` - Demo login
+- `POST /api/v1/auth/register` - User registration with Cognito
+- `POST /api/v1/auth/login` - User login with Cognito
+- `POST /api/v1/auth/logout` - User logout and token revocation
+- `POST /api/v1/auth/refresh` - Refresh access token
+- `POST /api/v1/auth/forgot-password` - Initiate password reset
+- `POST /api/v1/auth/confirm-forgot-password` - Confirm password reset
+- `POST /api/v1/auth/migrate-demo-users` - Migrate existing demo users to Cognito
+- `POST /api/v1/auth/demo-login` - Demo login (legacy)
+
+### Google OAuth (Production Only)
+
+- `GET /api/v1/auth/google/auth-url` - Get Google OAuth authorization URL
+- `POST /api/v1/auth/google/callback` - Handle Google OAuth callback
+- `POST /api/v1/auth/google/login` - Login with Google ID token
 
 ### Users
 

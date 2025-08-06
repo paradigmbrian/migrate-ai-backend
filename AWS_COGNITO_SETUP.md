@@ -1,6 +1,6 @@
 # AWS Cognito Setup Guide
 
-This guide will walk you through setting up AWS Cognito User Pool for the MigrateAI application.
+This guide will walk you through setting up AWS Cognito User Pool for the MigrateAI application with Google OAuth integration.
 
 ## Prerequisites
 
@@ -64,11 +64,13 @@ This guide will walk you through setting up AWS Cognito User Pool for the Migrat
 
 - `http://localhost:3000/callback`
 - `http://localhost:8081/callback`
+- `http://localhost:8000/api/v1/auth/google/callback`
 
 **Sign out URLs:**
 
 - `http://localhost:3000`
 - `http://localhost:8081`
+- `http://localhost:8000`
 
 **Allowed OAuth flows:**
 
@@ -85,7 +87,7 @@ This guide will walk you through setting up AWS Cognito User Pool for the Migrat
 
 Review all settings and click **"Create user pool"**
 
-## Step 2: Configure Google OAuth (Optional)
+## Step 2: Configure Google OAuth
 
 ### 2.1 Google Cloud Console Setup
 
@@ -93,113 +95,170 @@ Review all settings and click **"Create user pool"**
 2. Navigate to **APIs & Services** → **Credentials**
 3. Click **"Create Credentials"** → **"OAuth 2.0 Client IDs"**
 4. Configure the OAuth consent screen if prompted
-5. Create OAuth 2.0 Client ID with:
-   - **Application type:** Web application
-   - **Authorized redirect URIs:** `https://cognito-idp.us-east-1.amazonaws.com/`
 
-### 2.2 Add Google Provider to Cognito
+### 2.2 Create OAuth 2.0 Client ID
 
-1. In your AWS Cognito User Pool, go to **Sign-in experience** → **Identity providers**
-2. Click **"Add identity provider"** → **"Google"**
-3. Enter your Google Client ID and Client Secret
-4. Save the configuration
+**Application type:** Web application
+**Name:** MigrateAI Web Client
+**Authorized JavaScript origins:**
 
-## Step 3: Get Configuration Values
+- `http://localhost:3000`
+- `http://localhost:8081`
+- `http://localhost:8000`
 
-After creating the User Pool, note down these values:
+**Authorized redirect URIs:**
 
-1. **User Pool ID** (format: `us-east-1_xxxxxxxxx`)
-2. **App Client ID** (format: `xxxxxxxxxxxxxxxxxxxxxxxxxx`)
+- `http://localhost:8000/api/v1/auth/google/callback`
+- `http://localhost:3000/callback`
+- `http://localhost:8081/callback`
 
-## Step 4: Update Environment Configuration
+### 2.3 Note Your Credentials
 
-Update your `.env.local` file with the actual values:
+Save the following credentials:
+
+- **Web Client ID:** `your-web-client-id.apps.googleusercontent.com`
+- **Web Client Secret:** `your-web-client-secret`
+
+**Note:** For this implementation, we only need the Web Client ID. Platform-specific clients (Android/iOS) are not required as we're using the Web Client ID for both mobile and backend authentication.
+
+## Step 3: Configure Google as Identity Provider in Cognito
+
+### 3.1 Add Google Identity Provider
+
+1. In your Cognito User Pool, go to **Sign-in experience** → **Federated identity provider sign-in**
+2. Click **"Add identity provider"**
+3. Select **"Google"**
+
+### 3.2 Configure Google Identity Provider
+
+**Google Client ID:** `your-web-client-id.apps.googleusercontent.com`
+**Google Client Secret:** `your-web-client-secret`
+
+**Attribute mapping:**
+
+- **Email:** `email`
+- **Name:** `name`
+- **Given name:** `given_name`
+- **Family name:** `family_name`
+- **Picture:** `picture`
+
+### 3.3 Configure App Client Integration
+
+1. Go to **App integration** → **App client and analytics**
+2. Select your app client
+3. Under **Identity providers**, enable **Google**
+
+## Step 4: Environment Configuration
+
+### 4.1 Backend Environment Variables
+
+Add the following to your `.env` file:
 
 ```bash
+# Google OAuth Configuration
+GOOGLE_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-web-client-secret
+
 # AWS Cognito Configuration
-AWS_REGION=us-east-1
-COGNITO_USER_POOL_ID=us-east-1_xxxxxxxxx  # Replace with actual User Pool ID
-COGNITO_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx  # Replace with actual Client ID
-COGNITO_CLIENT_SECRET=  # Leave empty for public client
+COGNITO_USER_POOL_ID=us-east-1_WwRcEUTPK
+COGNITO_CLIENT_ID=6ua29lb1du929vuaqllsk2b5tp
+COGNITO_CLIENT_SECRET=your-cognito-client-secret
 
-# AWS Credentials (for local development)
-AWS_ACCESS_KEY_ID=your-actual-access-key
-AWS_SECRET_ACCESS_KEY=your-actual-secret-key
+# Backend URL for OAuth callbacks
+BACKEND_URL=http://localhost:8000
 ```
 
-## Step 5: Test Configuration
+### 4.2 Mobile App Configuration
 
-Run the test script to verify your setup:
+Update your mobile app configuration:
 
-```bash
-python test_cognito_setup.py
+**Update `src/config/cognito.ts`:**
+
+```typescript
+const cognitoConfig = {
+  Auth: {
+    Cognito: {
+      userPoolId: "us-east-1_WwRcEUTPK",
+      userPoolClientId: "6ua29lb1du929vuaqllsk2b5tp",
+      region: "us-east-1",
+      mandatorySignIn: true,
+      authenticationFlowType: "USER_PASSWORD_AUTH",
+    },
+  },
+};
 ```
 
-## Step 6: Custom Attributes (Optional)
+**Update `src/services/authService.ts`:**
 
-If you want to store additional user attributes, you can add custom attributes:
+```typescript
+GoogleSignin.configure({
+  webClientId: "your-web-client-id.apps.googleusercontent.com",
+  offlineAccess: true,
+  hostedDomain: "",
+  forceCodeForRefreshToken: true,
+});
+```
 
-1. In your User Pool, go to **Sign-up experience** → **Custom attributes**
-2. Add custom attributes for:
-   - `age` (Number)
-   - `marital_status` (String)
-   - `profession` (String)
-   - `dependents` (Number)
+**Note:** We use the same Web Client ID for both mobile and backend. No platform-specific configuration files are needed.
+
+## Step 5: Testing the Integration
+
+### 5.1 Test Backend OAuth Endpoints
+
+1. Start your backend server
+2. Test the Google OAuth endpoints:
+   - `GET /api/v1/auth/google/auth-url` - Get authorization URL
+   - `POST /api/v1/auth/google/login` - Login with ID token
+   - `POST /api/v1/auth/google/callback` - Handle OAuth callback
+
+### 5.2 Test Mobile App Integration
+
+1. Build and run your mobile app
+2. Test Google Sign-In flow
+3. Verify user creation and authentication
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **"Parameter validation failed"**
+1. **"Invalid redirect URI" error:**
 
-   - Check that all environment variables are set correctly
-   - Ensure AWS credentials have proper permissions
+   - Ensure redirect URIs in Google Console match exactly
+   - Check for trailing slashes and protocol differences
 
-2. **"Access Denied"**
+2. **"Client ID mismatch" error:**
 
-   - Verify AWS credentials have Cognito permissions
-   - Check IAM policies for Cognito access
+   - Verify you're using the same Web Client ID for both mobile and backend
+   - Check that the client ID matches in your environment variables
 
-3. **"Invalid client"**
-   - Verify App Client ID is correct
-   - Check that the client is configured for the correct auth flows
+3. **"Google Play Services not available" error:**
 
-### Required IAM Permissions
+   - Ensure Google Play Services is installed and updated
+   - Test on a device with Google Play Services
 
-Your AWS user/role needs these Cognito permissions:
+4. **"Token validation failed" error:**
+   - Check that Google client ID matches between frontend and backend
+   - Verify token expiration and audience
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "cognito-idp:CreateUserPool",
-        "cognito-idp:CreateUserPoolClient",
-        "cognito-idp:DescribeUserPool",
-        "cognito-idp:DescribeUserPoolClient",
-        "cognito-idp:AdminCreateUser",
-        "cognito-idp:AdminGetUser",
-        "cognito-idp:AdminUpdateUserAttributes",
-        "cognito-idp:AdminDeleteUser",
-        "cognito-idp:InitiateAuth",
-        "cognito-idp:RespondToAuthChallenge",
-        "cognito-idp:ForgotPassword",
-        "cognito-idp:ConfirmForgotPassword",
-        "cognito-idp:GetUser"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
-```
+### Debug Steps
 
-## Next Steps
+1. Check browser console for OAuth errors
+2. Monitor backend logs for authentication failures
+3. Verify environment variables are correctly set
+4. Test with Google's OAuth playground
 
-After completing this setup:
+## Security Considerations
 
-1. Test user registration and login
-2. Update authentication endpoints to use Cognito
-3. Configure mobile app to use Cognito SDK
-4. Set up production environment variables
+1. **Client Secrets:** Never expose client secrets in client-side code
+2. **Token Storage:** Store tokens securely using platform-specific secure storage
+3. **Token Validation:** Always validate tokens on the backend
+4. **HTTPS:** Use HTTPS in production for all OAuth flows
+5. **Scope Limitation:** Request only necessary OAuth scopes
+
+## Production Deployment
+
+1. Update redirect URIs for production domains
+2. Configure production Google OAuth credentials
+3. Update environment variables for production
+4. Enable HTTPS for all OAuth endpoints
+5. Configure proper CORS settings for production domains

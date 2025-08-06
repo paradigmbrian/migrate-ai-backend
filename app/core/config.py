@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # API
     api_v1_prefix: str = "/api/v1"
     secret_key: str = Field(..., alias="SECRET_KEY", description="Secret key for application")
+    backend_url: str = Field(default="http://localhost:8000", alias="BACKEND_URL", description="Backend URL for OAuth callbacks")
     
     # Database
     database_url: str = Field(..., alias="DATABASE_URL", description="PostgreSQL database URL")
@@ -45,6 +46,10 @@ class Settings(BaseSettings):
     cognito_user_pool_id: Optional[str] = Field(default=None, alias="COGNITO_USER_POOL_ID", description="Cognito User Pool ID")
     cognito_client_id: Optional[str] = Field(default=None, alias="COGNITO_CLIENT_ID", description="Cognito App Client ID")
     cognito_client_secret: Optional[str] = Field(default=None, alias="COGNITO_CLIENT_SECRET", description="Cognito App Client Secret")
+    
+    # Google OAuth Configuration
+    google_client_id: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_ID", description="Google OAuth Client ID")
+    google_client_secret: Optional[str] = Field(default=None, alias="GOOGLE_CLIENT_SECRET", description="Google OAuth Client Secret")
     
     # Data Collection
     data_collection_timeout: int = Field(

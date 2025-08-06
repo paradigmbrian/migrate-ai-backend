@@ -4,7 +4,8 @@ Cognito authentication endpoints for user registration and login.
 
 import logging
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Form
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.database import get_db
@@ -13,6 +14,8 @@ from app.schemas.auth import Token, UserCreate, UserLogin
 from app.schemas.user import UserResponse
 from app.services.cognito_service import cognito_service
 from app.services.profile_sync_service import ProfileSyncService
+from app.services.user_migration_service import UserMigrationService
+from app.services.cognito_user_status_service import CognitoUserStatusService
 import uuid
 
 # Set up logging
@@ -338,6 +341,188 @@ async def confirm_forgot_password(
         )
 
 
+@router.post("/logout")
+async def logout(
+    access_token: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Logout user from AWS Cognito and invalidate session.
+    """
+    logger.info("Logout attempt initiated")
+    
+    try:
+        # Revoke the access token in Cognito
+        logout_response = await cognito_service.sign_out(access_token)
+        
+        if not logout_response.get('success'):
+            error_msg = logout_response.get('error_message', 'Logout failed')
+            logger.error(f"Cognito logout failed: {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Logout failed: {error_msg}"
+            )
+        
+        logger.info("User successfully logged out from Cognito")
+        
+        return {
+            "message": "Successfully logged out",
+            "success": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Logout error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Logout failed"
+        )
+
+
+@router.post("/migrate-demo-users")
+async def migrate_demo_users(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Migrate existing demo users to AWS Cognito.
+    This endpoint should only be used during development/testing.
+    """
+    logger.info("Demo user migration endpoint called")
+    
+    try:
+        migration_service = UserMigrationService(db)
+        result = await migration_service.migrate_all_demo_users()
+        
+        if result['success']:
+            return {
+                "message": result['message'],
+                "migrated_count": result['migrated_count'],
+                "failed_count": result['failed_count'],
+                "results": result['results']
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Migration failed: {result['error']}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Migration error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Migration failed"
+        )
+
+
+@router.post("/user/activity")
+async def update_user_activity(
+    user_id: str,
+    activity_type: str = "heartbeat",
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update user activity and online status.
+    """
+    logger.info(f"User activity update: {user_id} - {activity_type}")
+    
+    try:
+        status_service = CognitoUserStatusService(db)
+        result = await status_service.update_user_activity(user_id, activity_type)
+        
+        if result['success']:
+            return {
+                "message": "Activity updated successfully",
+                "user_id": user_id,
+                "status": result['status'],
+                "last_activity": result['last_activity']
+            }
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update activity: {result['error']}"
+            )
+            
+    except Exception as e:
+        logger.error(f"Activity update error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update activity"
+        )
+
+
+@router.get("/user/{user_id}/status")
+async def get_user_status(
+    user_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get current user status and session information.
+    """
+    logger.info(f"Getting user status: {user_id}")
+    
+    try:
+        status_service = CognitoUserStatusService(db)
+        result = await status_service.get_user_status(user_id)
+        
+        if result['status'] == 'not_found':
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        elif result['status'] == 'error':
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error getting user status: {result['error']}"
+            )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get user status error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get user status"
+        )
+
+
+@router.get("/user/{user_id}/session")
+async def get_user_session_info(
+    user_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get detailed session information for a user.
+    """
+    logger.info(f"Getting user session info: {user_id}")
+    
+    try:
+        status_service = CognitoUserStatusService(db)
+        result = await status_service.get_user_session_info(user_id)
+        
+        if result['status'] == 'not_found':
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        elif result['status'] == 'error':
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Error getting session info: {result['error']}"
+            )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get session info error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to get session info"
+        )
+
+
 @router.post("/demo-login", response_model=Token)
 async def demo_login(
     db: AsyncSession = Depends(get_db)
@@ -410,4 +595,201 @@ async def demo_login(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Could not log user in. User out of sync"
+        ) 
+
+@router.post("/google/callback")
+async def google_oauth_callback(
+    request: Request,
+    code: str = Form(...),
+    state: str = Form(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Handle Google OAuth callback.
+    """
+    logger.info(f"Google OAuth callback received with code: {code[:10]}...")
+    
+    try:
+        # Get the redirect URI from the request
+        redirect_uri = str(request.url_for('google_oauth_callback'))
+        
+        # Exchange authorization code for tokens
+        oauth_result = await cognito_service.initiate_google_oauth(code, redirect_uri)
+        
+        if not oauth_result.get('success'):
+            error_msg = oauth_result.get('error_message', 'OAuth flow failed')
+            logger.error(f"Google OAuth failed: {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"OAuth authentication failed: {error_msg}"
+            )
+        
+        user_info = oauth_result['user_info']
+        logger.info(f"Google OAuth successful for user: {user_info.get('email')}")
+        
+        # Check if user exists in our database
+        sync_service = ProfileSyncService(db)
+        
+        # Prepare user data for sync
+        cognito_user_data = {
+            'sub': user_info.get('sub'),
+            'email': user_info.get('email'),
+            'given_name': user_info.get('given_name', ''),
+            'family_name': user_info.get('family_name', ''),
+            'birthdate': '1990-01-01',  # Default for OAuth users
+        }
+        
+        try:
+            user = await sync_service.sync_cognito_user_to_db(cognito_user_data)
+            logger.info(f"User synced to database: {user.id}")
+        except Exception as sync_error:
+            logger.error(f"Failed to sync user to database: {sync_error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not authenticate user. User sync failed."
+            )
+        
+        # Create session data
+        session_data = {
+            'access_token': oauth_result.get('access_token'),
+            'id_token': oauth_result.get('id_token'),
+            'refresh_token': oauth_result.get('refresh_token'),
+            'expires_in': oauth_result.get('expires_in', 3600),
+            'token_type': 'Bearer',
+            'provider': 'google'
+        }
+        
+        # Return success response with tokens
+        return {
+            'success': True,
+            'user': {
+                'id': str(user.id),
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'created_at': user.created_at.isoformat(),
+                'updated_at': user.updated_at.isoformat()
+            },
+            'session': session_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in Google OAuth callback: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error during OAuth authentication"
+        )
+
+@router.post("/google/login")
+async def google_login(
+    id_token: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Login with Google ID token.
+    """
+    logger.info("Google login attempt with ID token")
+    
+    try:
+        # Validate the Google ID token
+        validation_result = await cognito_service.validate_google_token(id_token)
+        
+        if not validation_result.get('success'):
+            error_msg = validation_result.get('error_message', 'Token validation failed')
+            logger.error(f"Google token validation failed: {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid Google token: {error_msg}"
+            )
+        
+        user_info = validation_result['user_info']
+        logger.info(f"Google token validated for user: {user_info.get('email')}")
+        
+        # Check if user exists in our database
+        sync_service = ProfileSyncService(db)
+        
+        # Prepare user data for sync
+        cognito_user_data = {
+            'sub': user_info.get('sub'),
+            'email': user_info.get('email'),
+            'given_name': user_info.get('given_name', ''),
+            'family_name': user_info.get('family_name', ''),
+            'birthdate': '1990-01-01',  # Default for OAuth users
+        }
+        
+        try:
+            user = await sync_service.sync_cognito_user_to_db(cognito_user_data)
+            logger.info(f"User synced to database: {user.id}")
+        except Exception as sync_error:
+            logger.error(f"Failed to sync user to database: {sync_error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Could not authenticate user. User sync failed."
+            )
+        
+        # Create session data (using the ID token as access token for now)
+        session_data = {
+            'access_token': id_token,  # Using ID token as access token
+            'id_token': id_token,
+            'expires_in': 3600,  # Default expiration
+            'token_type': 'Bearer',
+            'provider': 'google'
+        }
+        
+        # Return success response
+        return {
+            'success': True,
+            'user': {
+                'id': str(user.id),
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'created_at': user.created_at.isoformat(),
+                'updated_at': user.updated_at.isoformat()
+            },
+            'session': session_data
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in Google login: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Internal server error during Google authentication"
+        )
+
+@router.get("/google/auth-url")
+async def get_google_auth_url():
+    """
+    Get Google OAuth authorization URL.
+    """
+    try:
+        client_id = cognito_service.google_client_id
+        redirect_uri = f"{settings.backend_url}/api/v1/auth/google/callback"
+        
+        # Google OAuth 2.0 authorization URL
+        auth_url = (
+            f"https://accounts.google.com/o/oauth2/v2/auth?"
+            f"client_id={client_id}&"
+            f"redirect_uri={redirect_uri}&"
+            f"response_type=code&"
+            f"scope=openid%20email%20profile&"
+            f"access_type=offline&"
+            f"prompt=consent"
+        )
+        
+        return {
+            'auth_url': auth_url,
+            'client_id': client_id,
+            'redirect_uri': redirect_uri
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating Google auth URL: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not generate Google authorization URL"
         ) 
