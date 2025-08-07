@@ -226,6 +226,13 @@ uv run pytest --cov=app
 - `PUT /api/v1/checklists/{checklist_id}` - Update checklist
 - `DELETE /api/v1/checklists/{checklist_id}` - Delete checklist
 
+### AI-Powered Checklists
+
+- `POST /api/v1/ai-checklists/generate` - Generate AI-powered personalized checklist
+- `GET /api/v1/ai-checklists/recommendations` - Get personalized recommendations
+- `POST /api/v1/ai-checklists/tips` - Get smart tips for specific tasks
+- `GET /api/v1/ai-checklists/health` - Check AI service health
+
 ### Policies
 
 - `GET /api/v1/policies` - List policies
