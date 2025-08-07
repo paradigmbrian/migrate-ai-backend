@@ -233,6 +233,13 @@ uv run pytest --cov=app
 - `POST /api/v1/ai-checklists/tips` - Get smart tips for specific tasks
 - `GET /api/v1/ai-checklists/health` - Check AI service health
 
+### Personalization Features
+
+- `GET /api/v1/ai-checklists/user-profile` - Get user's personalization profile
+- `GET /api/v1/ai-checklists/dynamic-content/{origin_id}/{destination_id}` - Get dynamic content for country pair
+- `GET /api/v1/ai-checklists/smart-defaults/{origin_id}/{destination_id}` - Get smart defaults and suggestions
+- `POST /api/v1/ai-checklists/personalized-tips` - Get personalized tips and advice
+
 ### Policies
 
 - `GET /api/v1/policies` - List policies

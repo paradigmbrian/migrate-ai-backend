@@ -11,6 +11,8 @@ from app.core.config import settings
 from app.models.user import User
 from app.models.country import Country
 from app.services.fallback_checklist_service import fallback_checklist_service
+from app.services.personalization_service import PersonalizationService
+from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +33,8 @@ class OpenAIService:
         user: User,
         origin_country: Country,
         destination_country: Country,
-        reason_for_moving: str
+        reason_for_moving: str,
+        db: AsyncSession = None
     ) -> Dict[str, Any]:
         """
         Generate personalized checklist using OpenAI.
@@ -41,6 +44,7 @@ class OpenAIService:
             origin_country: Origin country details
             destination_country: Destination country details
             reason_for_moving: Reason for migration
+            db: Database session for personalization features
             
         Returns:
             Dictionary containing generated checklist
@@ -48,9 +52,16 @@ class OpenAIService:
         # Check if OpenAI is configured
         if not self.client.api_key:
             logger.warning("OpenAI API key not configured, using fallback service")
-            return fallback_checklist_service.generate_checklist(
+            result = fallback_checklist_service.generate_checklist(
                 user, origin_country, destination_country, reason_for_moving
             )
+            # Add personalization if database is available
+            if db and result['success']:
+                personalization_service = PersonalizationService(db)
+                result['checklist'] = await personalization_service.enhance_checklist_with_personalization(
+                    result['checklist'], user, origin_country, destination_country
+                )
+            return result
         
         try:
             # Create context-aware prompt
@@ -82,6 +93,13 @@ class OpenAIService:
             # Parse the response
             checklist_data = self._parse_checklist_response(response.choices[0].message.content)
             
+            # Add personalization if database is available
+            if db:
+                personalization_service = PersonalizationService(db)
+                checklist_data = await personalization_service.enhance_checklist_with_personalization(
+                    checklist_data, user, origin_country, destination_country
+                )
+            
             return {
                 'success': True,
                 'checklist': checklist_data,
@@ -92,9 +110,16 @@ class OpenAIService:
         except Exception as e:
             logger.error(f"Error generating checklist with OpenAI: {e}")
             logger.info("Falling back to static checklist service")
-            return fallback_checklist_service.generate_checklist(
+            result = fallback_checklist_service.generate_checklist(
                 user, origin_country, destination_country, reason_for_moving
             )
+            # Add personalization if database is available
+            if db and result['success']:
+                personalization_service = PersonalizationService(db)
+                result['checklist'] = await personalization_service.enhance_checklist_with_personalization(
+                    result['checklist'], user, origin_country, destination_country
+                )
+            return result
     
     async def get_personalized_recommendations(
         self,
