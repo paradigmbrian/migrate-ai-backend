@@ -1,192 +1,93 @@
-# MigrateAI Backend
+# MigrateAI Backend API
 
-A FastAPI-based backend for the MigrateAI application, providing immigration checklist generation and user management.
+A FastAPI-based backend for the MigrateAI application, providing immigration checklist management, user authentication, and AI-powered personalization features.
 
 ## Features
 
-- **FastAPI** - Modern, fast web framework for building APIs
-- **PostgreSQL** - Robust relational database with async support
-- **Redis** - Caching and session storage
-- **Alembic** - Database migration management
-- **JWT Authentication** - Secure token-based authentication
-- **Pydantic** - Data validation and serialization
-- **Docker** - Containerized development environment
-
-## Project Structure
-
-```
-migrate-backend/
-├── app/
-│   ├── api/           # API routes and endpoints
-│   ├── core/          # Core configuration and utilities
-│   ├── db/            # Database configuration and seeding
-│   ├── models/        # SQLAlchemy ORM models
-│   └── schemas/       # Pydantic data schemas
-├── migrations/        # Alembic database migrations
-├── scripts/           # Utility scripts
-├── docker-compose.yml # Docker services configuration
-├── Dockerfile         # Backend application container
-└── pyproject.toml     # Project dependencies and configuration
-```
+- **AWS Cognito Authentication**: Secure user authentication with social login support
+- **AI-Powered Checklists**: OpenAI integration for personalized checklist generation
+- **Policy Change Detection**: Automated monitoring of immigration policy changes
+- **User Management**: Profile management and user preferences
+- **Country Data**: Comprehensive country information and visa requirements
+- **Real-time Updates**: WebSocket support for real-time data synchronization
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
-- Docker and Docker Compose
-- uv (Python package manager)
+- PostgreSQL 13+
+- Redis (for caching and sessions)
+- OpenAI API key (for AI features)
 
-### 1. Clone and Setup
+### Installation
 
-```bash
-# Navigate to backend directory
-cd migrate-backend
+1. **Clone the repository**
 
-# Install dependencies
-uv sync
+   ```bash
+   git clone <repository-url>
+   cd migrate-backend
+   ```
 
-# Copy environment file
-cp .env.example .env
-```
+2. **Install dependencies**
 
-### 2. Start Database Services
+   ```bash
+   pip install -e .
+   ```
 
-```bash
-# Start PostgreSQL and Redis using Docker
-./scripts/start-db.sh
+3. **Set up environment variables**
 
-# Or manually with Docker Compose
-docker-compose up -d postgres redis
-```
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
 
-### 3. Run Database Migrations
+4. **Run database migrations**
 
-```bash
-# Apply database migrations
-uv run alembic upgrade head
+   ```bash
+   alembic upgrade head
+   ```
 
-# Seed the database with initial data
-uv run python -m app.db.seed
-```
+5. **Start the server**
+   ```bash
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
 
-### 4. Start the Development Server
-
-```bash
-# Start the FastAPI server
-uv run python -m app.main
-
-# Or with auto-reload
-uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-The API will be available at `http://localhost:8000`
-
-## Docker Development
-
-### Start All Services
+## Environment Variables
 
 ```bash
-# Start database services only
-docker-compose up -d postgres redis
+# Database
+DATABASE_URL=postgresql+asyncpg://user:password@localhost/migrate_ai
 
-# Start everything (backend + databases)
-docker-compose up -d
-```
+# AWS Cognito
+COGNITO_USER_POOL_ID=your-user-pool-id
+COGNITO_CLIENT_ID=your-client-id
+COGNITO_CLIENT_SECRET=your-client-secret
+COGNITO_REGION=us-east-1
 
-### Build and Run Backend Container
+# Google OAuth (Production Only)
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+BACKEND_URL=http://localhost:8000
 
-```bash
-# Build the backend image
-docker build -t migrate-backend .
+# OpenAI
+OPENAI_API_KEY=your-openai-api-key
 
-# Run the container
-docker run -p 8000:8000 --env-file .env migrate-backend
-```
+# Security
+SECRET_KEY=your-secret-key
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-### Database Management
-
-```bash
-# View database logs
-docker-compose logs -f postgres
-
-# Connect to PostgreSQL
-docker-compose exec postgres psql -U postgres -d migrate_dev
-
-# Reset database
-docker-compose down -v
-docker-compose up -d postgres redis
+# Redis
+REDIS_URL=redis://localhost:6379
 ```
 
 ## API Documentation
 
-Once the server is running, you can access:
+Once the server is running, visit:
 
 - **Interactive API Docs**: http://localhost:8000/docs
 - **ReDoc Documentation**: http://localhost:8000/redoc
-- **OpenAPI Schema**: http://localhost:8000/openapi.json
-
-## Environment Variables
-
-Copy `.env.example` to `.env` and configure:
-
-```bash
-# App Configuration
-DEBUG=true
-LOG_LEVEL=INFO
-SECRET_KEY=your-secret-key-here
-
-# Database
-DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/migrate_dev
-
-# Redis
-REDIS_URL=redis://localhost:6379
-
-# CORS
-ALLOWED_ORIGINS=["http://localhost:3000","http://localhost:8081"]
-```
-
-## Database Migrations
-
-```bash
-# Create a new migration
-uv run alembic revision --autogenerate -m "Description of changes"
-
-# Apply migrations
-uv run alembic upgrade head
-
-# Rollback migration
-uv run alembic downgrade -1
-
-# View migration history
-uv run alembic history
-```
-
-## Development
-
-### Code Quality
-
-```bash
-# Format code
-uv run black app/
-uv run isort app/
-
-# Type checking
-uv run mypy app/
-
-# Linting
-uv run ruff check app/
-```
-
-### Testing
-
-```bash
-# Run tests
-uv run pytest
-
-# Run with coverage
-uv run pytest --cov=app
-```
 
 ## API Endpoints
 
@@ -209,20 +110,21 @@ uv run pytest --cov=app
 
 ### Users
 
-- `GET /api/v1/users/me` - Get current user
-- `PUT /api/v1/users/me` - Update current user
+- `GET /api/v1/users/me` - Get current user profile
+- `PUT /api/v1/users/me` - Update current user profile
+- `DELETE /api/v1/users/me` - Delete current user account
 
-### Countries
+### Profile Management
 
-- `GET /api/v1/countries` - List all countries
-- `GET /api/v1/countries/{country_id}` - Get country details
-- `GET /api/v1/countries/{country_id}/policies` - Get country policies
+- `GET /api/v1/users/profile` - Get user profile
+- `PUT /api/v1/users/profile` - Update user profile
+- `POST /api/v1/users/profile/onboarding` - Complete onboarding
 
 ### Checklists
 
-- `GET /api/v1/checklists` - List user checklists
+- `GET /api/v1/checklists` - Get user checklists
 - `POST /api/v1/checklists` - Create new checklist
-- `GET /api/v1/checklists/{checklist_id}` - Get checklist details
+- `GET /api/v1/checklists/{checklist_id}` - Get specific checklist
 - `PUT /api/v1/checklists/{checklist_id}` - Update checklist
 - `DELETE /api/v1/checklists/{checklist_id}` - Delete checklist
 
@@ -240,60 +142,83 @@ uv run pytest --cov=app
 - `GET /api/v1/ai-checklists/smart-defaults/{origin_id}/{destination_id}` - Get smart defaults and suggestions
 - `POST /api/v1/ai-checklists/personalized-tips` - Get personalized tips and advice
 
+### Policy Change Detection
+
+- `POST /api/v1/policy-monitoring/check-changes` - Manually trigger policy change check
+- `GET /api/v1/policy-monitoring/user-changes` - Get policy changes relevant to user
+- `POST /api/v1/policy-monitoring/assess-impact` - Assess impact of policy change on checklists
+- `GET /api/v1/policy-monitoring/notification-preferences` - Get user notification preferences
+- `PUT /api/v1/policy-monitoring/notification-preferences` - Update notification preferences
+- `GET /api/v1/policy-monitoring/monitoring-status` - Get monitoring system status
+
+### Countries
+
+- `GET /api/v1/countries` - Get all countries
+- `GET /api/v1/countries/{country_id}` - Get specific country
+- `GET /api/v1/countries/search` - Search countries
+
 ### Policies
 
-- `GET /api/v1/policies` - List policies
-- `POST /api/v1/policies` - Create policy
-- `GET /api/v1/policies/{policy_id}` - Get policy details
-- `PUT /api/v1/policies/{policy_id}` - Update policy
-- `DELETE /api/v1/policies/{policy_id}` - Delete policy
+- `GET /api/v1/policies` - Get immigration policies
+- `GET /api/v1/policies/{policy_id}` - Get specific policy
+- `GET /api/v1/policies/country/{country_id}` - Get policies for country
 
-## Database Models
+### Data Collection
 
-### User
+- `POST /api/v1/data-collection/feedback` - Submit user feedback
+- `GET /api/v1/data-collection/analytics` - Get analytics data
 
-- Authentication fields (email, hashed_password)
-- Profile information (name, phone, date_of_birth)
-- Migration details (origin_country, destination_country, reason_for_moving)
-- Timestamps and metadata
+## Testing
 
-### Country
+### Run Tests
 
-- Geographic information (name, code, continent, region)
-- Economic data (gdp_per_capita, population)
-- Immigration metrics (immigration_rate, visa_types)
-- Policy information (policy_update_frequency)
+```bash
+pytest
+```
 
-### Checklist
+### Test Coverage
 
-- User association and status
-- Origin and destination countries
-- Progress tracking (completed_items, total_items)
-- Timestamps and metadata
+```bash
+pytest --cov=app tests/
+```
 
-### ChecklistItem
+## Development
 
-- Checklist association and category
-- Task details (title, description, priority)
-- Completion tracking (is_completed, completed_at)
-- Estimated duration and dependencies
+### Code Style
 
-### Policy
+This project uses:
 
-- Country association and policy type
-- Requirements and eligibility criteria
-- Processing times and costs
-- Status and metadata
+- **Black** for code formatting
+- **isort** for import sorting
+- **flake8** for linting
+
+### Pre-commit Hooks
+
+```bash
+pre-commit install
+```
+
+## Deployment
+
+### Docker
+
+```bash
+docker build -t migrate-ai-backend .
+docker run -p 8000:8000 migrate-ai-backend
+```
+
+### AWS ECS
+
+See `infrastructure/aws/` for deployment configurations.
 
 ## Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a pull request
+4. Add tests
+5. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the MIT License - see the LICENSE file for details.
