@@ -39,7 +39,6 @@ class ProfileSyncService:
             email = cognito_user_data.get('email')
             first_name = cognito_user_data.get('given_name', '')
             last_name = cognito_user_data.get('family_name', '')
-            birthdate = cognito_user_data.get('birthdate', '')
             
             if not cognito_sub or not email:
                 raise ValueError("Missing required Cognito data: sub or email")
@@ -53,7 +52,6 @@ class ProfileSyncService:
                     cognito_data={
                         'first_name': first_name,
                         'last_name': last_name,
-                        'birthdate': birthdate,
                         'email': email
                     },
                     db_user=user
@@ -69,7 +67,6 @@ class ProfileSyncService:
                     email=email,
                     first_name=first_name,
                     last_name=last_name,
-                    birthdate=birthdate,
                     onboarding_complete=True,  # User successfully registered
                     last_login=datetime.utcnow(),
                     is_active=True,
@@ -131,8 +128,6 @@ class ProfileSyncService:
             db_user.first_name = cognito_data['first_name']
         if cognito_data.get('last_name'):
             db_user.last_name = cognito_data['last_name']
-        if cognito_data.get('birthdate'):
-            db_user.birthdate = cognito_data['birthdate']
         if cognito_data.get('email'):
             db_user.email = cognito_data['email']
         
@@ -161,7 +156,7 @@ class ProfileSyncService:
             raise ValueError(f"User not found: {user_id}")
         
         # Update allowed fields
-        allowed_fields = ['first_name', 'last_name', 'birthdate', 'onboarding_complete']
+        allowed_fields = ['first_name', 'last_name', 'onboarding_complete']
         for field, value in updates.items():
             if field in allowed_fields and hasattr(user, field):
                 setattr(user, field, value)
@@ -202,7 +197,7 @@ class ProfileSyncService:
         merged_data = db_data.copy()
         
         # Prefer Cognito data for auth-related fields
-        auth_fields = ['first_name', 'last_name', 'birthdate', 'email']
+        auth_fields = ['first_name', 'last_name', 'email']
         for field in auth_fields:
             if field in cognito_data and cognito_data[field]:
                 merged_data[field] = cognito_data[field]

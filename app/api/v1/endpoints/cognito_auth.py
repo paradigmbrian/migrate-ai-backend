@@ -17,6 +17,7 @@ from app.services.profile_sync_service import ProfileSyncService
 from app.services.user_migration_service import UserMigrationService
 from app.services.cognito_user_status_service import CognitoUserStatusService
 import uuid
+from pydantic import BaseModel
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -40,7 +41,6 @@ async def register(
             'email': user_data.email,
             'given_name': user_data.first_name,
             'family_name': user_data.last_name,
-            'birthdate': user_data.birthdate or '1990-01-01',  # Required by User Pool
         }
         
         logger.info(f"Prepared Cognito attributes: {user_attributes}")
@@ -74,7 +74,6 @@ async def register(
             'email': user_data.email,
             'given_name': user_data.first_name,
             'family_name': user_data.last_name,
-            'birthdate': user_data.birthdate or '1990-01-01',
         }
         
         try:
@@ -177,7 +176,6 @@ async def login(
             'email': user_response['attributes'].get('email', ''),
             'given_name': user_response['attributes'].get('given_name', ''),
             'family_name': user_response['attributes'].get('family_name', ''),
-            'birthdate': user_response['attributes'].get('birthdate', '1990-01-01'),
         }
         
         try:
@@ -250,7 +248,6 @@ async def refresh_token(
             'email': user_response['attributes'].get('email', ''),
             'given_name': user_response['attributes'].get('given_name', ''),
             'family_name': user_response['attributes'].get('family_name', ''),
-            'birthdate': user_response['attributes'].get('birthdate', '1990-01-01'),
         }
         
         try:
@@ -341,9 +338,12 @@ async def confirm_forgot_password(
         )
 
 
+class LogoutRequest(BaseModel):
+    access_token: str
+
 @router.post("/logout")
 async def logout(
-    access_token: str,
+    logout_data: LogoutRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -353,7 +353,7 @@ async def logout(
     
     try:
         # Revoke the access token in Cognito
-        logout_response = await cognito_service.sign_out(access_token)
+        logout_response = await cognito_service.sign_out(logout_data.access_token)
         
         if not logout_response.get('success'):
             error_msg = logout_response.get('error_message', 'Logout failed')
@@ -636,7 +636,6 @@ async def google_oauth_callback(
             'email': user_info.get('email'),
             'given_name': user_info.get('given_name', ''),
             'family_name': user_info.get('family_name', ''),
-            'birthdate': '1990-01-01',  # Default for OAuth users
         }
         
         try:
@@ -716,7 +715,6 @@ async def google_login(
             'email': user_info.get('email'),
             'given_name': user_info.get('given_name', ''),
             'family_name': user_info.get('family_name', ''),
-            'birthdate': '1990-01-01',  # Default for OAuth users
         }
         
         try:

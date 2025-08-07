@@ -12,7 +12,6 @@ class UserBase(BaseModel):
     email: str
     first_name: str
     last_name: str
-    birthdate: Optional[str] = None  # YYYY-MM-DD format
 
 
 class UserCreate(UserBase):
@@ -24,7 +23,6 @@ class UserUpdate(BaseModel):
     """User update model."""
     first_name: Optional[str] = None
     last_name: Optional[str] = None
-    birthdate: Optional[str] = None
     onboarding_complete: Optional[bool] = None
 
 

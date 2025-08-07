@@ -111,17 +111,6 @@ class CognitoService:
                     cognito_attributes.append({'Name': 'given_name', 'Value': value})
                 elif key == 'family_name':
                     cognito_attributes.append({'Name': 'family_name', 'Value': value})
-                elif key == 'birthdate':
-                    cognito_attributes.append({'Name': 'birthdate', 'Value': value})
-                elif key == 'custom:age':
-                    cognito_attributes.append({'Name': 'custom:age', 'Value': str(value)})
-                elif key == 'custom:marital_status':
-                    cognito_attributes.append({'Name': 'custom:marital_status', 'Value': value})
-                elif key == 'custom:profession':
-                    cognito_attributes.append({'Name': 'custom:profession', 'Value': value})
-                elif key == 'custom:dependents':
-                    cognito_attributes.append({'Name': 'custom:dependents', 'Value': str(value)})
-            
             logger.info(f"Converted Cognito attributes: {cognito_attributes}")
             logger.info(f"Using Client ID: {self.client_id}")
             

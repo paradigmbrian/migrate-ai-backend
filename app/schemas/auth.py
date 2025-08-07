@@ -25,7 +25,6 @@ class UserCreate(BaseModel):
     password: str
     first_name: str
     last_name: str
-    birthdate: Optional[str] = None  # YYYY-MM-DD format
 
 
 class UserLogin(BaseModel):

@@ -19,7 +19,6 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
-    birthdate = Column(String(10), nullable=True)  # YYYY-MM-DD format
     
     # Onboarding and login tracking
     onboarding_complete = Column(Boolean, default=False)
