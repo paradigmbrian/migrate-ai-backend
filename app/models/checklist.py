@@ -48,7 +48,16 @@ class Checklist(Base):
     reason_for_moving = Column(String(200), nullable=True)
     
     # Status and progress
-    status = Column(Enum(ChecklistStatus), default=ChecklistStatus.DRAFT)
+    status = Column(
+        Enum(
+            ChecklistStatus,
+            values_callable=lambda x: [e.value for e in x],
+            name="checkliststatus",
+            native_enum=True,
+            validate_strings=True,
+        ),
+        default="draft",
+    )
     progress_percentage = Column(Integer, default=0)
     
     # Timestamps
@@ -75,7 +84,16 @@ class ChecklistItem(Base):
     # Item details
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
-    category = Column(Enum(ChecklistCategory), nullable=False)
+    category = Column(
+        Enum(
+            ChecklistCategory,
+            values_callable=lambda x: [e.value for e in x],
+            name="checklistcategory",
+            native_enum=True,
+            validate_strings=True,
+        ),
+        nullable=False,
+    )
     
     # Status and tracking
     is_completed = Column(Boolean, default=False)

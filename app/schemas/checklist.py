@@ -83,8 +83,8 @@ class ChecklistGenerateRequest(BaseModel):
 # Response schemas
 class ChecklistItemResponse(ChecklistItemBase):
     """Schema for checklist item response."""
-    id: int
-    checklist_id: int
+    id: str
+    checklist_id: str
     is_completed: bool
     completed_at: Optional[datetime]
     created_at: datetime
@@ -99,8 +99,8 @@ class ChecklistItemResponse(ChecklistItemBase):
 
 class ChecklistResponse(ChecklistBase):
     """Schema for checklist response."""
-    id: int
-    user_id: int
+    id: str
+    user_id: str
     status: ChecklistStatus
     progress_percentage: int
     created_at: datetime
@@ -117,7 +117,7 @@ class ChecklistResponse(ChecklistBase):
 
 class ChecklistSummary(BaseModel):
     """Schema for checklist summary (list view)."""
-    id: int
+    id: str
     title: str
     origin_country_code: str
     destination_country_code: str
