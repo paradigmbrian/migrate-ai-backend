@@ -31,22 +31,11 @@ async def get_checklists(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get user checklists."""
-    # TODO: Implement actual database queries
-    return [
-        {
-            "id": 1,
-            "title": "Sample Checklist",
-            "origin_country_code": "US",
-            "destination_country_code": "CA",
-            "status": "draft",
-            "progress_percentage": 0,
-            "total_items": 0,
-            "completed_items": 0,
-            "created_at": "2024-01-01T00:00:00",
-            "updated_at": "2024-01-01T00:00:00"
-        }
-    ]
+    """Get user checklists.
+    If the user has no checklists, return an empty list with 200 OK.
+    """
+    # TODO: Implement actual database queries; for now, return empty set to avoid 404s
+    return []
 
 
 @router.post("/generate", response_model=dict)

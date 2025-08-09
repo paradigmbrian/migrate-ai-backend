@@ -438,19 +438,46 @@ class CognitoService:
             Dictionary containing sign out response
         """
         try:
-            # Revoke the access token
-            self.client.revoke_token(
-                Token=access_token,
-                ClientId=self.client_id
-            )
+            # Add timeout to prevent hanging
+            import asyncio
+            import concurrent.futures
             
-            logger.info("Access token successfully revoked")
+            def revoke_token_sync():
+                try:
+                    self.client.revoke_token(
+                        Token=access_token,
+                        ClientId=self.client_id
+                    )
+                    return True
+                except Exception as e:
+                    logger.error(f"Revoke token error: {e}")
+                    return False
             
+            # Run the sync AWS call in a thread pool with timeout
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = loop.run_in_executor(executor, revoke_token_sync)
+                result = await asyncio.wait_for(future, timeout=10.0)  # 10 second timeout
+            
+            if result:
+                logger.info("Access token successfully revoked")
+                return {
+                    'success': True,
+                    'message': 'Successfully signed out'
+                }
+            else:
+                logger.warn("Token revocation failed, but continuing with logout")
+                return {
+                    'success': True,
+                    'message': 'Logout completed (token revocation failed)'
+                }
+                
+        except asyncio.TimeoutError:
+            logger.warn("Token revocation timed out, but continuing with logout")
             return {
                 'success': True,
-                'message': 'Successfully signed out'
+                'message': 'Logout completed (token revocation timed out)'
             }
-            
         except ClientError as e:
             error_code = e.response['Error']['Code']
             error_message = e.response['Error']['Message']

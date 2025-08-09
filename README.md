@@ -99,8 +99,6 @@ Once the server is running, visit:
 - `POST /api/v1/auth/refresh` - Refresh access token
 - `POST /api/v1/auth/forgot-password` - Initiate password reset
 - `POST /api/v1/auth/confirm-forgot-password` - Confirm password reset
-- `POST /api/v1/auth/migrate-demo-users` - Migrate existing demo users to Cognito
-- `POST /api/v1/auth/demo-login` - Demo login (legacy)
 
 ### Google OAuth (Production Only)
 
@@ -209,16 +207,4 @@ docker run -p 8000:8000 migrate-ai-backend
 
 ### AWS ECS
 
-See `infrastructure/aws/` for deployment configurations.
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+See `infrastructure/aws/`

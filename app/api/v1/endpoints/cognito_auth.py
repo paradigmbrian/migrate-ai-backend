@@ -10,11 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.db.database import get_db
 from app.models.user import User
-from app.schemas.auth import Token, UserCreate, UserLogin
+from app.schemas.auth import Token, UserLogin, UserCreate
 from app.schemas.user import UserResponse
 from app.services.cognito_service import cognito_service
 from app.services.profile_sync_service import ProfileSyncService
-from app.services.user_migration_service import UserMigrationService
 from app.services.cognito_user_status_service import CognitoUserStatusService
 import uuid
 from pydantic import BaseModel
@@ -352,18 +351,32 @@ async def logout(
     logger.info("Logout attempt initiated")
     
     try:
-        # Revoke the access token in Cognito
-        logout_response = await cognito_service.sign_out(logout_data.access_token)
+        # Add timeout to prevent hanging
+        import asyncio
+        
+        # Create a timeout wrapper for the Cognito call
+        async def logout_with_timeout():
+            try:
+                logout_response = await cognito_service.sign_out(logout_data.access_token)
+                return logout_response
+            except Exception as e:
+                logger.error(f"Cognito logout error: {e}")
+                return {'success': False, 'error_message': str(e)}
+        
+        # Call with timeout
+        try:
+            logout_response = await asyncio.wait_for(logout_with_timeout(), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warn("Cognito logout timed out, but continuing with local logout")
+            logout_response = {'success': True, 'message': 'Logout completed (Cognito timeout)'}
         
         if not logout_response.get('success'):
             error_msg = logout_response.get('error_message', 'Logout failed')
             logger.error(f"Cognito logout failed: {error_msg}")
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Logout failed: {error_msg}"
-            )
+            # Don't raise exception, just log and continue
+            logger.info("Continuing with local logout despite Cognito failure")
         
-        logger.info("User successfully logged out from Cognito")
+        logger.info("User successfully logged out")
         
         return {
             "message": "Successfully logged out",
@@ -372,45 +385,11 @@ async def logout(
         
     except Exception as e:
         logger.error(f"Logout error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Logout failed"
-        )
-
-
-@router.post("/migrate-demo-users")
-async def migrate_demo_users(
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Migrate existing demo users to AWS Cognito.
-    This endpoint should only be used during development/testing.
-    """
-    logger.info("Demo user migration endpoint called")
-    
-    try:
-        migration_service = UserMigrationService(db)
-        result = await migration_service.migrate_all_demo_users()
-        
-        if result['success']:
-            return {
-                "message": result['message'],
-                "migrated_count": result['migrated_count'],
-                "failed_count": result['failed_count'],
-                "results": result['results']
-            }
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Migration failed: {result['error']}"
-            )
-            
-    except Exception as e:
-        logger.error(f"Migration error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Migration failed"
-        )
+        # Return success even if there's an error, to prevent hanging
+        return {
+            "message": "Logout completed (with errors)",
+            "success": True
+        }
 
 
 @router.post("/user/activity")
@@ -522,80 +501,6 @@ async def get_user_session_info(
             detail="Failed to get session info"
         )
 
-
-@router.post("/demo-login", response_model=Token)
-async def demo_login(
-    db: AsyncSession = Depends(get_db)
-):
-    """
-    Demo login for development/testing purposes using Cognito.
-    """
-    try:
-        demo_email = "demo@migrateai.com"
-        demo_password = "DemoPassword123!"
-        
-        # Sign in the demo user
-        sign_in_response = await cognito_service.sign_in(demo_email, demo_password)
-        
-        if not sign_in_response.get('success'):
-            # If user is not confirmed, try to confirm them first
-            if sign_in_response.get('error_code') == 'UserNotConfirmedException':
-                # User not confirmed, attempting to confirm
-                confirm_response = await cognito_service.confirm_sign_up(demo_email)
-                if confirm_response.get('success'):
-                    # Try sign in again after confirmation
-                    sign_in_response = await cognito_service.sign_in(demo_email, demo_password)
-                else:
-                    # Failed to confirm user - continue to admin sign in
-                    pass
-            
-            # If still failing, try admin sign in as fallback
-            if not sign_in_response.get('success'):
-                # Trying admin sign in as fallback
-                sign_in_response = await cognito_service.admin_sign_in(demo_email, demo_password)
-        
-        if not sign_in_response.get('success'):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Demo login failed"
-            )
-        
-        # Get user data from Cognito for sync
-        user_response = await cognito_service.get_user(sign_in_response['access_token'])
-        
-        if not user_response.get('success'):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Failed to get user information",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        
-        # Sync user to database using ProfileSyncService
-        sync_service = ProfileSyncService(db)
-        
-        try:
-            user = await sync_service.sync_cognito_user_to_db(user_response['user_data'])
-            logger.info(f"Demo user synced to database: {user.id}")
-        except Exception as sync_error:
-            logger.error(f"Failed to sync demo user to database: {sync_error}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Could not log user in. User out of sync"
-            )
-        
-        return {
-            "access_token": sign_in_response['access_token'],
-            "token_type": "bearer",
-            "user": UserResponse.from_orm(user)
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not log user in. User out of sync"
-        ) 
 
 @router.post("/google/callback")
 async def google_oauth_callback(
@@ -765,29 +670,11 @@ async def get_google_auth_url():
     Get Google OAuth authorization URL.
     """
     try:
-        client_id = cognito_service.google_client_id
-        redirect_uri = f"{settings.backend_url}/api/v1/auth/google/callback"
-        
-        # Google OAuth 2.0 authorization URL
-        auth_url = (
-            f"https://accounts.google.com/o/oauth2/v2/auth?"
-            f"client_id={client_id}&"
-            f"redirect_uri={redirect_uri}&"
-            f"response_type=code&"
-            f"scope=openid%20email%20profile&"
-            f"access_type=offline&"
-            f"prompt=consent"
-        )
-        
-        return {
-            'auth_url': auth_url,
-            'client_id': client_id,
-            'redirect_uri': redirect_uri
-        }
-        
+        auth_url = await cognito_service.get_google_auth_url()
+        return {"auth_url": auth_url}
     except Exception as e:
-        logger.error(f"Error generating Google auth URL: {str(e)}")
+        logger.error(f"Error getting Google auth URL: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not generate Google authorization URL"
+            detail="Failed to get Google auth URL"
         ) 
