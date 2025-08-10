@@ -5,6 +5,7 @@ Country model for storing country information and data.
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, Float
+from sqlalchemy.orm import relationship
 from app.db.database import Base
 
 
@@ -45,6 +46,10 @@ class Country(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    immigration_requirements = relationship("ImmigrationRequirements", back_populates="country")
+    country_data = relationship("CountryData", back_populates="country")
     
     def __repr__(self) -> str:
         return f"<Country(code='{self.code}', name='{self.name}')>" 

@@ -111,4 +111,99 @@ async def get_cognito_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+async def get_admin_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """Get current user and verify they have admin privileges."""
+    # Check if user has admin role in Cognito groups
+    try:
+        # Get user groups from Cognito
+        user_groups = await cognito_service.get_user_groups(current_user.cognito_sub)
+        
+        if not user_groups.get('success'):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Could not verify admin privileges",
+            )
+        
+        # Check if user is in admin group
+        groups = user_groups.get('groups', [])
+        admin_groups = ['admin', 'administrator', 'superuser']
+        
+        if not any(group.lower() in admin_groups for group in groups):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin privileges required",
+            )
+        
+        return current_user
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Could not verify admin privileges",
+        )
+
+
+async def get_admin_user_by_token(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+) -> dict:
+    """Get admin user by token for admin-only operations."""
+    try:
+        # Verify token and get user data
+        token_response = await cognito_service.verify_token(credentials.credentials)
+        
+        if not token_response.get('success'):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Get user sub from token
+        user_sub = token_response.get('user_sub')
+        if not user_sub:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token payload",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Get user groups from Cognito
+        user_groups = await cognito_service.get_user_groups(user_sub)
+        
+        if not user_groups.get('success'):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Could not verify admin privileges",
+            )
+        
+        # Check if user is in admin group
+        groups = user_groups.get('groups', [])
+        admin_groups = ['admin', 'administrator', 'superuser']
+        
+        if not any(group.lower() in admin_groups for group in groups):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin privileges required",
+            )
+        
+        # Return admin user info
+        return {
+            'user_sub': user_sub,
+            'groups': groups,
+            'token': credentials.credentials
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Could not verify admin privileges",
         ) 
